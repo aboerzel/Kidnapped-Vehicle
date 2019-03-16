@@ -121,8 +121,24 @@ public:
 
 private:
 
+    /**
+     * Random value with Gaussian normal distribution
+     * @param mean The mean
+     * @param std The sigma
+     * @return Random value
+     */
     double gaussian_noise(double mean, double std);
 
+    /**
+     * Multivariate-Gaussian probability density
+     * @param sig_x Sigma x
+     * @param sig_y Sigma y
+     * @param x_obs Observation x
+     * @param y_obs Observation y
+     * @param mu_x Mean x
+     * @param mu_y Mean y
+     * @return 
+     */
     double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x, double mu_y) const;
 
     // Number of particles to draw
@@ -131,6 +147,7 @@ private:
     // Flag, if filter is initialized
     bool is_initialized;
 
+    // random generator
     std::default_random_engine gen;
 };
 

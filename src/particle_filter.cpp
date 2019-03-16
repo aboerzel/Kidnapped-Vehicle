@@ -9,19 +9,19 @@
 
 #include <math.h>
 #include <algorithm>
-#include <iostream>
 #include <iterator>
-#include <numeric>
 #include <random>
 #include <string>
 #include <vector>
 
 #include "helper_functions.h"
+#include <cassert>
 
 using std::string;
 using std::vector;
 
-#define NUMBER_OF_PARTICLES 500 // TODO: Set the number of particles
+#define NUMBER_OF_PARTICLES 100
+#define EPSILON 0.000001
 
 double ParticleFilter::gaussian_noise(double mean, double std)
 {
@@ -35,8 +35,8 @@ double ParticleFilter::multiv_prob(double sig_x, double sig_y,
 {
     auto gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
 
-    auto exponent = (pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2)))
-        + (pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2)));
+    auto exponent = pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2))
+        + pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2));
 
     return gauss_norm * exp(-exponent);
 }
@@ -47,8 +47,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[])
 
     for (auto i = 0; i < num_particles; ++i)
     {
-        Particle p{i, gaussian_noise(x, std[0]), gaussian_noise(y, std[1]), gaussian_noise(theta, std[2]), 1.0};
-        particles.push_back(p);
+        particles.push_back(Particle{
+            i, gaussian_noise(x, std[0]), gaussian_noise(y, std[1]), gaussian_noise(theta, std[2]), 1.0
+        });
     }
 
     is_initialized = true;
@@ -57,37 +58,39 @@ void ParticleFilter::init(double x, double y, double theta, double std[])
 void ParticleFilter::prediction(double delta_t, double std_pos[],
                                 double velocity, double yaw_rate)
 {
-    auto theta_dt = delta_t * yaw_rate;
+    auto theta_dt = yaw_rate * delta_t;
     auto velocity_dt = velocity * delta_t;
 
-    for (auto particle : particles)
+    for (auto& particle : particles)
     {
-        if (fabs(yaw_rate) < 0.00001)
+        // use simplified formula if yaw rate is ~0.0
+        if (fabs(yaw_rate) < EPSILON)
         {
-            particle.x = particle.x + (velocity_dt * cos(particle.theta));
-            particle.y = particle.y + (velocity_dt * sin(particle.theta));
+            particle.x += velocity_dt * cos(particle.theta);
+            particle.y += velocity_dt * sin(particle.theta);
         }
         else
         {
-            particle.x = particle.x + (velocity / particle.theta * (sin(particle.theta + theta_dt) - sin(particle.theta)
-            ));
-            particle.y = particle.y + (velocity / particle.theta * (cos(particle.theta) - cos(particle.theta + theta_dt)
-            ));
-            particle.theta = particle.theta + theta_dt;
+            particle.x += velocity / yaw_rate * (sin(particle.theta + theta_dt) - sin(particle.theta));
+            particle.y += velocity / yaw_rate * (cos(particle.theta) - cos(particle.theta + theta_dt));
+            particle.theta += theta_dt;
         }
 
+        // add noise
         particle.x += gaussian_noise(0, std_pos[0]);
         particle.y += gaussian_noise(0, std_pos[1]);
-        particle.theta += +gaussian_noise(0, std_pos[2]);
+        particle.theta += gaussian_noise(0, std_pos[2]);
     }
 }
 
 void ParticleFilter::dataAssociation(vector<LandmarkObs> landmark_predictions,
                                      vector<LandmarkObs>& observations)
 {
-    // select the id from the nearest landmark for each observation
-    for (auto observation : observations)
+    // associate the id from the nearest landmark for each observation
+    for (auto& observation : observations)
     {
+        assert(observation.id == -1);
+
         auto min_dist = std::numeric_limits<double>::max();
 
         for (auto landmark : landmark_predictions)
@@ -97,9 +100,11 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> landmark_predictions,
             if (current_dist < min_dist)
             {
                 min_dist = current_dist;
-                observation.id = landmark.id; // associate landmark id to observation
+                observation.id = landmark.id; // associate observation to landmark
             }
         }
+
+        assert(observation.id != -1);
     }
 }
 
@@ -107,7 +112,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
                                    const vector<LandmarkObs>& observations,
                                    const Map& map_landmarks)
 {
-    for (auto particle : particles)
+    for (auto& particle : particles)
     {
         // transform observations from vehicle coordinates to map coordinates
         auto cos_theta = cos(particle.theta);
@@ -118,7 +123,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         {
             // homogenous transformation
             LandmarkObs transformed_observation{
-                -1, // we do not know with which landmark to associate this observation yet
+                -1, // no landmark associated
                 particle.x + cos_theta * observation.x - sin_theta * observation.y,
                 particle.y + sin_theta * observation.x + cos_theta * observation.y
             };
@@ -134,16 +139,31 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
                 landmark_predictions.push_back(LandmarkObs{landmark.id_i, landmark.x_f, landmark.y_f});
         }
 
-        // select the id from the nearest landmark for each observation
+        // associate observations to landmarks
         dataAssociation(landmark_predictions, transformed_observations);
 
         // calculate and update the particle's final weight
-        particle.weight = 1.0; // set to 1 for multiplication in the end of the loop
-        for (auto observation : transformed_observations)
+        particle.weight = 1.0;
+        for (auto& observation : transformed_observations)
         {
-            const auto landmark = landmark_predictions[observation.id - 1];
-            particle.weight *= multiv_prob(std_landmark[0], std_landmark[1], observation.x, observation.y, landmark.x,
-                                           landmark.y);
+            assert(observation.id != -1);
+
+            // find associated landmark
+            LandmarkObs landmark{-1};
+            for (auto landmark_prediction : landmark_predictions)
+            {
+                if (landmark_prediction.id == observation.id)
+                {
+                    landmark = landmark_prediction;
+                    break;
+                }
+            }
+
+            assert(landmark.id != -1);
+
+            auto weight = multiv_prob(std_landmark[0], std_landmark[1], observation.x, observation.y, landmark.x, landmark.y);
+            if (weight > 0)
+                particle.weight *= weight;
         }
     }
 }
@@ -158,10 +178,13 @@ void ParticleFilter::resample()
                                                  return a.weight < b.weight;
                                              })->weight;
 
+    std::uniform_real_distribution<double> dist_max_weight(0.0, max_weight);
+
+    // resampling wheel
     vector<Particle> resampled_particles;
-    for (auto particle : particles)
+    for (auto i = 0; i < num_particles; i++)
     {
-        beta += (double(rand()) / (double(RAND_MAX) + 1.0)) * 2.0 * max_weight;
+        beta += dist_max_weight(gen) * 2.0;
         while (beta > particles[index].weight)
         {
             beta -= particles[index].weight;
