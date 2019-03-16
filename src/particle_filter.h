@@ -37,6 +37,8 @@ class ParticleFilter {
 
   double gaussian_noise(double mean, double std);
 
+  double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x, double mu_y) const;
+
   /**
    * init Initializes particle filter by initializing particles to Gaussian
    *   distribution around first position and all the weights to 1.
@@ -63,10 +65,10 @@ class ParticleFilter {
   /**
    * dataAssociation Finds which observations correspond to which landmarks 
    *   (likely by using a nearest-neighbors data association).
-   * @param predicted Vector of predicted landmark observations
+   * @param landmark_predictions Vector of predicted landmark observations
    * @param observations Vector of landmark observations
    */
-  static void dataAssociation(std::vector<LandmarkObs> predicted, 
+  static void dataAssociation(std::vector<LandmarkObs> landmark_predictions, 
                        std::vector<LandmarkObs>& observations);
   
   /**

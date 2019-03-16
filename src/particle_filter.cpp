@@ -29,6 +29,18 @@ double ParticleFilter::gaussian_noise(double mean, double std)
     return norm_dist(gen);
 }
 
+double ParticleFilter::multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x,
+                                   double mu_y) const
+{
+    // calculate normalization term
+    auto gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
+
+    auto exponent = (pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2)))
+        + (pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2)));
+
+    return gauss_norm * exp(-exponent);
+}
+
 void ParticleFilter::init(double x, double y, double theta, double std[])
 {
     /**
@@ -67,17 +79,18 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
      *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
      *  http://www.cplusplus.com/reference/random/default_random_engine/
      */
+    auto theta_dt = delta_t * yaw_rate;
+    auto velocity_dt = velocity * delta_t;
 
     for (auto particle : particles)
     {
         if (fabs(yaw_rate) < 0.00001)
         {
-            particle.x = particle.x + (velocity * delta_t * cos(particle.theta));
-            particle.y = particle.y + (velocity * delta_t * sin(particle.theta));
+            particle.x = particle.x + (velocity_dt * cos(particle.theta));
+            particle.y = particle.y + (velocity_dt * sin(particle.theta));
         }
         else
         {
-            auto theta_dt = delta_t * yaw_rate;
             particle.x = particle.x + (velocity / particle.theta * (sin(particle.theta + theta_dt) - sin(particle.theta)));
             particle.y = particle.y + (velocity / particle.theta * (cos(particle.theta) - cos(particle.theta + theta_dt)));
             particle.theta = particle.theta + theta_dt;
@@ -89,7 +102,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     }
 }
 
-void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
+void ParticleFilter::dataAssociation(vector<LandmarkObs> landmark_predictions,
                                      vector<LandmarkObs>& observations)
 {
     /**
@@ -101,18 +114,19 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
      *   during the updateWeights phase.
      */
 
+    // select the id from the nearest landmark for each observation
     for (auto observation : observations)
     {
         auto min_dist = std::numeric_limits<double>::max();
 
-        for (auto pred_observation : predicted)
+        for (auto landmark : landmark_predictions)
         {
-            auto current_dist = dist(pred_observation.x, pred_observation.y, observation.x, observation.y);
+            auto current_dist = dist(landmark.x, landmark.y, observation.x, observation.y);
 
             if (current_dist < min_dist)
             {
                 min_dist = current_dist;
-                observation.id = pred_observation.id;
+                observation.id = landmark.id;
             }
         }
     }
@@ -136,14 +150,45 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
      *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
      */
 
+    for (auto particle : particles)
+    {
+        // transform observations from vehicle coordinates to map coordinates
+        auto cos_theta = cos(particle.theta);
+        auto sin_theta = sin(particle.theta);
 
+        vector<LandmarkObs> transformed_observations;
+        for (auto observation : observations)
+        {
+            // homogenous transformation
+            LandmarkObs transformed_observation{
+                -1, // we do not know with which landmark to associate this observation yet
+                particle.x + cos_theta * observation.x - sin_theta * observation.y,
+                particle.y + sin_theta * observation.x + cos_theta * observation.y
+            };
 
+            transformed_observations.push_back(transformed_observation);
+        }
 
+        // select all landmarks that are within the sensor range, measured from the current particle
+        vector<LandmarkObs> landmark_predictions;
+        for (auto landmark : map_landmarks.landmark_list)
+        {
+            if (dist(particle.x, particle.y, landmark.x_f, landmark.y_f) <= sensor_range)
+                landmark_predictions.push_back(LandmarkObs{landmark.id_i, landmark.x_f, landmark.y_f});
+        }
 
+        // select the id from the nearest landmark for each observation
+        dataAssociation(landmark_predictions, transformed_observations);
 
-
-
-
+        // calculate and update the particle's final weight
+        particle.weight = 1.0; // set to 1 for multiplication in the end of the loop
+        for (auto observation : transformed_observations)
+        {
+            const auto landmark = landmark_predictions[observation.id - 1];
+            particle.weight *= multiv_prob(std_landmark[0], std_landmark[1], observation.x, observation.y, landmark.x,
+                                           landmark.y);
+        }
+    }
 }
 
 void ParticleFilter::resample()
