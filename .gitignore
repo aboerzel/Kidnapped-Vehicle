@@ -13,3 +13,4 @@ src/solutions
 *.filters
 *.vcxproj
 *.sln
+Debug/
