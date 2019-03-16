@@ -14,3 +14,4 @@ src/solutions
 *.vcxproj
 *.sln
 Debug/
+output/
