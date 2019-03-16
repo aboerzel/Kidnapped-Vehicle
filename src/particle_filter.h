@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "helper_functions.h"
+#include <random>
 
 struct Particle {
   int id;
@@ -33,6 +34,8 @@ class ParticleFilter {
 
   // Destructor
   ~ParticleFilter() {}
+
+  double gaussian_noise(double mean, double std);
 
   /**
    * init Initializes particle filter by initializing particles to Gaussian
@@ -63,7 +66,7 @@ class ParticleFilter {
    * @param predicted Vector of predicted landmark observations
    * @param observations Vector of landmark observations
    */
-  void dataAssociation(std::vector<LandmarkObs> predicted, 
+  static void dataAssociation(std::vector<LandmarkObs> predicted, 
                        std::vector<LandmarkObs>& observations);
   
   /**
@@ -119,7 +122,9 @@ class ParticleFilter {
   bool is_initialized;
   
   // Vector of weights of all particles
-  std::vector<double> weights; 
+  std::vector<double> weights;
+
+  std::default_random_engine gen;
 };
 
 #endif  // PARTICLE_FILTER_H_

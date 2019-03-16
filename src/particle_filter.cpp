@@ -21,6 +21,14 @@
 using std::string;
 using std::vector;
 
+#define NUMBER_OF_PARTICLES 500 // TODO: Set the number of particles
+
+double ParticleFilter::gaussian_noise(double mean, double std)
+{
+    std::normal_distribution<double> norm_dist(mean, std);
+    return norm_dist(gen);
+}
+
 void ParticleFilter::init(double x, double y, double theta, double std[])
 {
     /**
@@ -31,22 +39,16 @@ void ParticleFilter::init(double x, double y, double theta, double std[])
      * NOTE: Consult particle_filter.h for more information about this method 
      *   (and others in this file).
      */
-    num_particles = 1024; // TODO: Set the number of particles
+    num_particles = NUMBER_OF_PARTICLES;
 
-    std::default_random_engine gen;
-
-    std::normal_distribution<double> dist_x(x, std[0]);
-    std::normal_distribution<double> dist_y(y, std[1]);
-    std::normal_distribution<double> dist_theta(theta, std[2]);
-
-    for (int i = 0; i < num_particles; ++i)
+    for (auto i = 0; i < num_particles; ++i)
     {
         Particle p;
 
         p.id = i;
-        p.x = dist_x(gen);
-        p.y = dist_y(gen);
-        p.theta = dist_theta(gen);
+        p.x = gaussian_noise(x, std[0]);
+        p.y = gaussian_noise(y, std[1]);
+        p.theta = gaussian_noise(theta, std[2]);
         p.weight = 1.0;
 
         particles.push_back(p);
@@ -65,6 +67,26 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
      *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
      *  http://www.cplusplus.com/reference/random/default_random_engine/
      */
+
+    for (auto particle : particles)
+    {
+        if (fabs(yaw_rate) < 0.00001)
+        {
+            particle.x = particle.x + (velocity * delta_t * cos(particle.theta));
+            particle.y = particle.y + (velocity * delta_t * sin(particle.theta));
+        }
+        else
+        {
+            auto theta_dt = delta_t * yaw_rate;
+            particle.x = particle.x + (velocity / particle.theta * (sin(particle.theta + theta_dt) - sin(particle.theta)));
+            particle.y = particle.y + (velocity / particle.theta * (cos(particle.theta) - cos(particle.theta + theta_dt)));
+            particle.theta = particle.theta + theta_dt;
+        }
+
+        particle.x += gaussian_noise(0, std_pos[0]);
+        particle.y += gaussian_noise(0, std_pos[1]);
+        particle.theta += +gaussian_noise(0, std_pos[2]);
+    }
 }
 
 void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
@@ -78,6 +100,22 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
      *   probably find it useful to implement this method and use it as a helper 
      *   during the updateWeights phase.
      */
+
+    for (auto observation : observations)
+    {
+        auto min_dist = std::numeric_limits<double>::max();
+
+        for (auto pred_observation : predicted)
+        {
+            auto current_dist = dist(pred_observation.x, pred_observation.y, observation.x, observation.y);
+
+            if (current_dist < min_dist)
+            {
+                min_dist = current_dist;
+                observation.id = pred_observation.id;
+            }
+        }
+    }
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
@@ -97,6 +135,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
      *   and the following is a good resource for the actual equation to implement
      *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
      */
+
+
+
+
+
+
+
+
+
 }
 
 void ParticleFilter::resample()
